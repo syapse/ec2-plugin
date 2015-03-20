@@ -84,10 +84,9 @@ public class EC2Computer extends SlaveComputer {
         return node.getCloud();
     }
 
-	public boolean isSpotInstance()
-	{
-		return StringUtils.isNotBlank(this.getSpotInstanceRequestId());
-	}
+    public boolean isSpotInstance() {
+        return StringUtils.isNotBlank(this.getSpotInstanceRequestId());
+    }
 
     /**
      * Gets the EC2 console output.
@@ -171,22 +170,20 @@ public class EC2Computer extends SlaveComputer {
         return getCloud().connect().describeInstances(request).getReservations().get(0).getInstances().get(0);
     }
 
-	private SpotInstanceRequest _describeSpotRequest()
-	{
-   	 final AmazonEC2 ec2 = getCloud().connect();
-		final DescribeSpotInstanceRequestsRequest request = new DescribeSpotInstanceRequestsRequest();
-		request.setSpotInstanceRequestIds(Arrays.asList(this.getSpotInstanceRequestId()));
-		final DescribeSpotInstanceRequestsResult result = ec2.describeSpotInstanceRequests(request);
+    private SpotInstanceRequest _describeSpotRequest() {
+        AmazonEC2 ec2 = getCloud().connect();
+        DescribeSpotInstanceRequestsRequest request = new DescribeSpotInstanceRequestsRequest();
+        request.setSpotInstanceRequestIds(Arrays.asList(this.getSpotInstanceRequestId()));
+        DescribeSpotInstanceRequestsResult result = ec2.describeSpotInstanceRequests(request);
 
-		Preconditions.checkArgument(result.getSpotInstanceRequests().size() == 1);
-		return result.getSpotInstanceRequests().get(0);
+        Preconditions.checkArgument(result.getSpotInstanceRequests().size() == 1);
+        return result.getSpotInstanceRequests().get(0);
     }
 
-	private void _setInstanceId(final String instanceId)
-	{
-		final EC2AbstractSlave node = (EC2AbstractSlave) super.getNode();
-		node.setInstanceId(instanceId);
-	}
+    private void _setInstanceId(String instanceId) {
+        EC2AbstractSlave node = (EC2AbstractSlave) super.getNode();
+        node.setInstanceId(instanceId);
+    }
 
     /**
      * When the slave is deleted, terminate the instance.
@@ -222,17 +219,15 @@ public class EC2Computer extends SlaveComputer {
         }
     }
 
-	public void updateInstanceIdFromSpotRequest()
-	{
-		Preconditions.checkArgument(StringUtils.isNotBlank(this.getSpotInstanceRequestId()));
+    public void updateInstanceIdFromSpotRequest() {
+        Preconditions.checkArgument(StringUtils.isNotBlank(this.getSpotInstanceRequestId()));
 
-		final SpotInstanceRequest spotInstanceRequest = _describeSpotRequest();
+        SpotInstanceRequest spotInstanceRequest = _describeSpotRequest();
 
-		final String instanceId = spotInstanceRequest.getInstanceId();
-		if (StringUtils.isNotBlank(instanceId))
-		{
-			this._setInstanceId(instanceId);
-		}
-	}
+        String instanceId = spotInstanceRequest.getInstanceId();
+        if (StringUtils.isNotBlank(instanceId)) {
+            this._setInstanceId(instanceId);
+        }
+    }
 
 }
