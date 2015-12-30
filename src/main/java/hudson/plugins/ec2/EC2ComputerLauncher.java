@@ -33,11 +33,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.logging.Logger;
 
+import org.apache.commons.lang.StringUtils;
+
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.ec2.model.StartInstancesRequest;
 import com.amazonaws.services.ec2.model.StartInstancesResult;
+import com.google.common.base.Preconditions;
 
 /**
  * {@link ComputerLauncher} for EC2 that waits for the instance to really come up before proceeding to the real
@@ -52,52 +55,69 @@ public abstract class EC2ComputerLauncher extends ComputerLauncher {
             EC2Computer computer = (EC2Computer) _computer;
             PrintStream logger = listener.getLogger();
 
-            final String baseMsg = "Node " + computer.getName() + "(" + computer.getInstanceId() + ")";
-            String msg;
+            final String baseBaseMsg = "Node " + computer.getName();
+            String msg = null;
 
             OUTER: while (true) {
-                switch (computer.getState()) {
-                case PENDING:
-                    msg = baseMsg + " is still pending/launching, waiting 5s";
-                    break;
-                case STOPPING:
-                    msg = baseMsg + " is still stopping, waiting 5s";
-                    break;
-                case RUNNING:
-                    msg = baseMsg + " is ready";
-                    LOGGER.finer(msg);
-                    logger.println(msg);
-                    break OUTER;
-                case STOPPED:
-                    msg = baseMsg + " is stopped, sending start request";
-                    LOGGER.finer(msg);
-                    logger.println(msg);
+                if (StringUtils.isBlank(computer.getInstanceId())) {
+                    Preconditions.checkArgument(computer.getNode() instanceof EC2SpotSlave);
+                    final String baseMsg = baseBaseMsg + "(SpotRequest " + computer.getSpotInstanceRequestId() + ")";
+                    EC2SpotSlave ec2Slave = (EC2SpotSlave) computer.getNode();
+                    if (ec2Slave.isSpotRequestDead(computer)) {
+                        // Terminate launch
+                        return;
+                    }
 
-                    AmazonEC2 ec2 = computer.getCloud().connect();
-                    List<String> instances = new ArrayList<String>();
-                    instances.add(computer.getInstanceId());
-
-                    StartInstancesRequest siRequest = new StartInstancesRequest(instances);
-                    StartInstancesResult siResult = ec2.startInstances(siRequest);
-
-                    msg = baseMsg + ": sent start request, result: " + siResult;
-                    LOGGER.finer(baseMsg);
-                    logger.println(baseMsg);
-                    continue OUTER;
-                case SHUTTING_DOWN:
-                case TERMINATED:
-                    // abort
-                    msg = baseMsg + " is terminated or terminating, aborting launch";
-                    LOGGER.info(msg);
-                    logger.println(msg);
-                    return;
-                default:
-                    msg = baseMsg + " is in an unknown state, retrying in 5s";
-                    break;
+                    computer.updateInstanceIdFromSpotRequest();
+                    msg = baseMsg + " SpotRequest is still requesting the instance, waiting 10s";
                 }
 
-                // check every 5 secs
-                Thread.sleep(5000);
+                if (StringUtils.isNotBlank(computer.getInstanceId())) {
+                    final String baseMsg = baseBaseMsg + "(" + computer.getInstanceId() + ")";
+                    switch (computer.getState()) {
+                        case PENDING:
+                            msg = baseMsg + " is still pending/launching, waiting 5s";
+                            break;
+                        case STOPPING:
+                            msg = baseMsg + " is still stopping, waiting 5s";
+                            break;
+                        case RUNNING:
+                            msg = baseMsg + " is ready";
+                            LOGGER.finer(msg);
+                            logger.println(msg);
+                            break OUTER;
+                        case STOPPED:
+                            msg = baseMsg + " is stopped, sending start request";
+                            LOGGER.finer(msg);
+                            logger.println(msg);
+
+                            AmazonEC2 ec2 = computer.getCloud().connect();
+                            List<String> instances = new ArrayList<String>();
+                            instances.add(computer.getInstanceId());
+
+                            StartInstancesRequest siRequest = new StartInstancesRequest(instances);
+                            StartInstancesResult siResult = ec2.startInstances(siRequest);
+
+                            msg = baseMsg + ": sent start request, result: " + siResult;
+                            LOGGER.finer(baseMsg);
+                            logger.println(baseMsg);
+                            continue OUTER;
+                        case SHUTTING_DOWN:
+                        case TERMINATED:
+                            // abort
+                            msg = baseMsg + " is terminated or terminating, aborting launch";
+                            LOGGER.info(msg);
+                            logger.println(msg);
+                            return;
+                        default:
+                            msg = baseMsg + " is in an unknown state, retrying in 5s";
+                            break;
+                    }
+                }
+
+                // check every 10 seconds if in spot request phase, 5 seconds if instance already created
+                long timeToWait = StringUtils.isBlank(computer.getInstanceId()) ? 10000L : 5000L;
+                Thread.sleep(timeToWait);
                 // and report to system log and console
                 LOGGER.finest(msg);
                 logger.println(msg);
