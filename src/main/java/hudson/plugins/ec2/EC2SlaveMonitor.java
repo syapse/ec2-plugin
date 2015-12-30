@@ -13,7 +13,6 @@ import java.util.logging.Logger;
 import jenkins.model.Jenkins;
 
 import com.amazonaws.AmazonClientException;
-import com.amazonaws.services.ec2.model.SpotInstanceRequest;
 
 /**
  * @author Bruno Meneguello
@@ -39,13 +38,8 @@ public class EC2SlaveMonitor extends AsyncPeriodicWork {
         for (Node node : Jenkins.getInstance().getNodes()) {
             if (node instanceof EC2SpotSlave) {
                 final EC2SpotSlave ec2Slave = (EC2SpotSlave) node;
-                SpotInstanceRequest spotRequest = ec2Slave.getSpotRequest(ec2Slave.getSpotInstanceRequestId());
-
                 try {
-                    boolean isSpotRequestDead = spotRequest.getState().equals(SpotInstanceRequestState.CANCELLED.getCode())
-                            || spotRequest.getState().equals(SpotInstanceRequestState.CLOSED.getCode());
-
-                    if (!ec2Slave.isAlive(true) && isSpotRequestDead) {
+                    if (!ec2Slave.isAlive(true) && ec2Slave.isSpotRequestDead()) {
                         LOGGER.info("EC2 instance is dead: " + ec2Slave.getInstanceId());
                         ec2Slave.terminate();
                     }
