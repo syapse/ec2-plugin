@@ -63,7 +63,7 @@ public abstract class EC2ComputerLauncher extends ComputerLauncher {
                     Preconditions.checkArgument(computer.getNode() instanceof EC2SpotSlave);
                     final String baseMsg = baseBaseMsg + "(SpotRequest " + computer.getSpotInstanceRequestId() + ")";
                     EC2SpotSlave ec2Slave = (EC2SpotSlave) computer.getNode();
-                    if (ec2Slave.isSpotRequestDead(computer)) {
+                    if (ec2Slave.isSpotRequestDead()) {
                         // Terminate launch
                         return;
                     }

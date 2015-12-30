@@ -716,7 +716,6 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
                     launchSpecification.setSecurityGroups(securityGroupSet);
             }
 
-            String slaveName = UUID.randomUUID().toString();
             String userDataString = Base64.encodeBase64String(userData.getBytes());
 
             launchSpecification.setUserData(userDataString);
@@ -764,6 +763,7 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
             if (spotInstReq == null) {
                 throw new AmazonClientException("Spot instance request is null");
             }
+            String slaveName = spotInstReq.getSpotInstanceRequestId();
 
             /* Now that we have our Spot request, we can set tags on it */
             if (inst_tags != null) {
@@ -777,7 +777,7 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
             logger.println("Spot instance id in provision: " + spotInstReq.getSpotInstanceRequestId());
             LOGGER.info("Spot instance id in provision: " + spotInstReq.getSpotInstanceRequestId());
 
-            return newSpotSlave(spotInstReq, description + " (" + spotInstReq.getSpotInstanceRequestId() + ")");
+            return newSpotSlave(spotInstReq, slaveName);
 
         } catch (FormException e) {
             throw new AssertionError(); // we should have discovered all
