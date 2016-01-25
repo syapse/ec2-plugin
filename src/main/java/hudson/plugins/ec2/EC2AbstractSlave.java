@@ -255,15 +255,6 @@ public abstract class EC2AbstractSlave extends Slave {
         return instanceId;
     }
 
-    /**
-     * Sets the instance id.
-     *
-     * @param instanceId the new instance id
-     */
-    protected void setInstanceId(String instanceId) {
-        this.instanceId = instanceId;
-    }
-
     @Override
     public Computer createComputer() {
         return new EC2Computer(this);

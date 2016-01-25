@@ -54,67 +54,66 @@ public abstract class EC2ComputerLauncher extends ComputerLauncher {
     public void launch(SlaveComputer _computer, TaskListener listener) {
         try {
             EC2Computer computer = (EC2Computer) _computer;
-            final String baseBaseMsg = "Node " + computer.getName();
-            String msg = null;
+
+            while (StringUtils.isBlank(computer.getInstanceId())) {
+                Preconditions.checkArgument(computer.getNode() instanceof EC2SpotSlave);
+                EC2SpotSlave ec2Slave = (EC2SpotSlave) computer.getNode();
+                if (ec2Slave.isSpotRequestDead()) {
+                    // Terminate launch
+                    return;
+                }
+                final String msg = "Node " + computer.getName() + " (SpotRequest " + computer.getSpotInstanceRequestId() +
+                    ") still requesting the instance, waiting 10s";
+                // report to system log and console
+                ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINEST, listener, msg);
+                // check every 10 seconds if in spot request phase
+                Thread.sleep(10000);
+            }
+
+            final String baseMsg = "Node " + computer.getName() + "(" + computer.getInstanceId() + ")";
+            String msg;
 
             OUTER: while (true) {
-                if (StringUtils.isBlank(computer.getInstanceId())) {
-                    Preconditions.checkArgument(computer.getNode() instanceof EC2SpotSlave);
-                    final String baseMsg = baseBaseMsg + " (SpotRequest " + computer.getSpotInstanceRequestId() + ")";
-                    EC2SpotSlave ec2Slave = (EC2SpotSlave) computer.getNode();
-                    if (ec2Slave.isSpotRequestDead()) {
-                        // Terminate launch
-                        return;
-                    }
+                switch (computer.getState()) {
+                case PENDING:
+                    msg = baseMsg + " is still pending/launching, waiting 5s";
+                    break;
+                case STOPPING:
+                    msg = baseMsg + " is still stopping, waiting 5s";
+                    break;
+                case RUNNING:
+                    msg = baseMsg + " is ready";
+                    ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINER, listener, msg);
+                    break OUTER;
+                case STOPPED:
+                    msg = baseMsg + " is stopped, sending start request";
+                    ((EC2Computer) _computer).getCloud().log(LOGGER, Level.INFO, listener, msg);
 
-                    computer.updateInstanceIdFromSpotRequest();
-                    msg = baseMsg + " SpotRequest is still requesting the instance, waiting 10s";
+                    AmazonEC2 ec2 = computer.getCloud().connect();
+                    List<String> instances = new ArrayList<String>();
+                    instances.add(computer.getInstanceId());
+
+                    StartInstancesRequest siRequest = new StartInstancesRequest(instances);
+                    StartInstancesResult siResult = ec2.startInstances(siRequest);
+
+                    msg = baseMsg + ": sent start request, result: " + siResult;
+                    ((EC2Computer) _computer).getCloud().log(LOGGER, Level.INFO, listener, msg);
+                    continue OUTER;
+                case SHUTTING_DOWN:
+                case TERMINATED:
+                    // abort
+                    msg = baseMsg + " is terminated or terminating, aborting launch";
+                    ((EC2Computer) _computer).getCloud().log(LOGGER, Level.INFO, listener, msg);
+                    return;
+                default:
+                    msg = baseMsg + " is in an unknown state, retrying in 5s";
+                    break;
                 }
 
-                if (StringUtils.isNotBlank(computer.getInstanceId())) {
-                    final String baseMsg = baseBaseMsg + " (" + computer.getInstanceId() + ")";
-                    switch (computer.getState()) {
-                        case PENDING:
-                            msg = baseMsg + " is still pending/launching, waiting 5s";
-                            break;
-                        case STOPPING:
-                            msg = baseMsg + " is still stopping, waiting 5s";
-                            break;
-                        case RUNNING:
-                            msg = baseMsg + " is ready";
-                            ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINER, listener, msg);
-                            break OUTER;
-                        case STOPPED:
-                            msg = baseMsg + " is stopped, sending start request";
-                            ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINER, listener, msg);
-
-                            AmazonEC2 ec2 = computer.getCloud().connect();
-                            List<String> instances = new ArrayList<String>();
-                            instances.add(computer.getInstanceId());
-
-                            StartInstancesRequest siRequest = new StartInstancesRequest(instances);
-                            StartInstancesResult siResult = ec2.startInstances(siRequest);
-
-                            msg = baseMsg + ": sent start request, result: " + siResult;
-                            ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINER, listener, msg);
-                            continue OUTER;
-                        case SHUTTING_DOWN:
-                        case TERMINATED:
-                            // abort
-                            msg = baseMsg + " is terminated or terminating, aborting launch";
-                            ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINER, listener, msg);
-                            return;
-                        default:
-                            msg = baseMsg + " is in an unknown state, retrying in 5s";
-                            break;
-                    }
-                }
-
-                // check every 10 seconds if in spot request phase, 5 seconds if instance already created
-                long timeToWait = StringUtils.isBlank(computer.getInstanceId()) ? 10000L : 5000L;
-                Thread.sleep(timeToWait);
-                // and report to system log and console
+                // report to system log and console
                 ((EC2Computer) _computer).getCloud().log(LOGGER, Level.FINEST, listener, msg);
+                // check every 5 secs
+                Thread.sleep(5000);
             }
 
             launch(computer, listener, computer.describeInstance());

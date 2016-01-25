@@ -25,25 +25,17 @@ package hudson.plugins.ec2;
 
 import hudson.Util;
 import hudson.slaves.SlaveComputer;
-
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
 
-import org.apache.commons.lang.StringUtils;
 import org.kohsuke.stapler.HttpRedirect;
 import org.kohsuke.stapler.HttpResponse;
-
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.model.DescribeInstancesRequest;
-import com.amazonaws.services.ec2.model.DescribeSpotInstanceRequestsRequest;
-import com.amazonaws.services.ec2.model.DescribeSpotInstanceRequestsResult;
 import com.amazonaws.services.ec2.model.GetConsoleOutputRequest;
 import com.amazonaws.services.ec2.model.Instance;
-import com.amazonaws.services.ec2.model.SpotInstanceRequest;
-import com.google.common.base.Preconditions;
 
 /**
  * @author Kohsuke Kawaguchi
@@ -88,10 +80,6 @@ public class EC2Computer extends SlaveComputer {
 
     public SlaveTemplate getSlaveTemplate() {
         return getCloud().getTemplate(getNode().templateDescription);
-    }
-
-    public boolean isSpotInstance() {
-        return StringUtils.isNotBlank(this.getSpotInstanceRequestId());
     }
 
     /**
@@ -176,21 +164,6 @@ public class EC2Computer extends SlaveComputer {
         return getCloud().connect().describeInstances(request).getReservations().get(0).getInstances().get(0);
     }
 
-    private SpotInstanceRequest _describeSpotRequest() {
-        AmazonEC2 ec2 = getCloud().connect();
-        DescribeSpotInstanceRequestsRequest request = new DescribeSpotInstanceRequestsRequest();
-        request.setSpotInstanceRequestIds(Arrays.asList(this.getSpotInstanceRequestId()));
-        DescribeSpotInstanceRequestsResult result = ec2.describeSpotInstanceRequests(request);
-
-        Preconditions.checkArgument(result.getSpotInstanceRequests().size() == 1);
-        return result.getSpotInstanceRequests().get(0);
-    }
-
-    private void updateInstanceId(String instanceId) {
-        EC2AbstractSlave node = (EC2AbstractSlave) super.getNode();
-        node.setInstanceId(instanceId);
-    }
-
     /**
      * When the slave is deleted, terminate the instance.
      */
@@ -225,14 +198,4 @@ public class EC2Computer extends SlaveComputer {
         }
     }
 
-    public void updateInstanceIdFromSpotRequest() {
-        Preconditions.checkArgument(StringUtils.isNotBlank(this.getSpotInstanceRequestId()));
-
-        SpotInstanceRequest spotInstanceRequest = _describeSpotRequest();
-
-        String instanceId = spotInstanceRequest.getInstanceId();
-        if (StringUtils.isNotBlank(instanceId)) {
-            this.updateInstanceId(instanceId);
-        }
-    }
 }
