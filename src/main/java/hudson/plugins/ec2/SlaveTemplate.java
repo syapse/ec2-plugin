@@ -1,16 +1,16 @@
 /*
  * The MIT License
- * 
+ *
  * Copyright (c) 2004-, Kohsuke Kawaguchi, Sun Microsystems, Inc., and a number of other of contributors
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
  * documentation files (the "Software"), to deal in the Software without restriction, including without limitation the
  * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
  * permit persons to whom the Software is furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
  * Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
  * WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
  * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
@@ -442,10 +442,9 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
 
             riRequest.setEbsOptimized(ebsOptimized);
 
-            if (useEphemeralDevices) {
-                setupEphemeralDeviceMapping(riRequest);
-            } else {
-                setupCustomDeviceMapping(riRequest);
+            List<BlockDeviceMapping> blockDeviceMappings = getBlockDeviceMappings();
+            if (blockDeviceMappings != null) {
+                riRequest.setBlockDeviceMappings(blockDeviceMappings);
             }
 
             List<Filter> diFilters = new ArrayList<Filter>();
@@ -497,7 +496,7 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
             riRequest.setUserData(userDataString);
             riRequest.setKeyName(keyPair.getKeyName());
             diFilters.add(new Filter("key-name").withValues(keyPair.getKeyName()));
-            riRequest.setInstanceType(type.toString());
+            riRequest.setInstanceType(type);
             diFilters.add(new Filter("instance-type").withValues(type.toString()));
 
             if (getAssociatePublicIp()) {
@@ -599,35 +598,37 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
         }
     }
 
-    private void setupEphemeralDeviceMapping(RunInstancesRequest riRequest) {
+    private List<BlockDeviceMapping> getBlockDeviceMappings() {
+        if (useEphemeralDevices) {
+            final List<BlockDeviceMapping> oldDeviceMapping = getAmiBlockDeviceMappings();
 
-        final List<BlockDeviceMapping> oldDeviceMapping = getAmiBlockDeviceMappings();
+            final Set<String> occupiedDevices = new HashSet<String>();
+            for (final BlockDeviceMapping mapping : oldDeviceMapping) {
+                occupiedDevices.add(mapping.getDeviceName());
+            }
 
-        final Set<String> occupiedDevices = new HashSet<String>();
-        for (final BlockDeviceMapping mapping : oldDeviceMapping) {
+            final List<String> available = new ArrayList<String>(
+                    Arrays.asList("ephemeral0", "ephemeral1", "ephemeral2", "ephemeral3"));
 
-            occupiedDevices.add(mapping.getDeviceName());
+            final List<BlockDeviceMapping> newDeviceMapping = new ArrayList<BlockDeviceMapping>(4);
+            for (char suffix = 'b'; suffix <= 'z' && !available.isEmpty(); suffix++) {
+
+                final String deviceName = String.format("/dev/xvd%s", suffix);
+
+                if (occupiedDevices.contains(deviceName))
+                    continue;
+
+                final BlockDeviceMapping newMapping = new BlockDeviceMapping().withDeviceName(deviceName).withVirtualName(
+                        available.remove(0));
+
+                newDeviceMapping.add(newMapping);
+            }
+            return newDeviceMapping;
+        } else if (StringUtils.isNotBlank(customDeviceMapping)) {
+            return DeviceMappingParser.parse(customDeviceMapping);
+        } else {
+            return null;
         }
-
-        final List<String> available = new ArrayList<String>(
-                Arrays.asList("ephemeral0", "ephemeral1", "ephemeral2", "ephemeral3"));
-
-        final List<BlockDeviceMapping> newDeviceMapping = new ArrayList<BlockDeviceMapping>(4);
-        for (char suffix = 'b'; suffix <= 'z' && !available.isEmpty(); suffix++) {
-
-            final String deviceName = String.format("/dev/xvd%s", suffix);
-
-            if (occupiedDevices.contains(deviceName))
-                continue;
-
-            final BlockDeviceMapping newMapping = new BlockDeviceMapping().withDeviceName(deviceName).withVirtualName(
-                    available.get(0));
-
-            newDeviceMapping.add(newMapping);
-            available.remove(0);
-        }
-
-        riRequest.withBlockDeviceMappings(newDeviceMapping);
     }
 
     private List<BlockDeviceMapping> getAmiBlockDeviceMappings() {
@@ -645,12 +646,6 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
         }
 
         throw new AmazonClientException("Unable to get AMI device mapping for " + ami);
-    }
-
-    private void setupCustomDeviceMapping(RunInstancesRequest riRequest) {
-        if (StringUtils.isNotBlank(customDeviceMapping)) {
-            riRequest.setBlockDeviceMappings(DeviceMappingParser.parse(customDeviceMapping));
-        }
     }
 
     /**
@@ -683,7 +678,11 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
             InstanceNetworkInterfaceSpecification net = new InstanceNetworkInterfaceSpecification();
 
             launchSpecification.setImageId(ami);
-            launchSpecification.setInstanceType(type);
+
+            List<BlockDeviceMapping> blockDeviceMappings = getBlockDeviceMappings();
+            if (blockDeviceMappings != null) {
+                launchSpecification.setBlockDeviceMappings(blockDeviceMappings);
+            }
 
             if (StringUtils.isNotBlank(getZone())) {
                 SpotPlacement placement = new SpotPlacement(getZone());
@@ -858,7 +857,7 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
     /**
      * Update the tags stored in EC2 with the specified information. Re-try 5 times if instances isn't up by
      * catchErrorCode - e.g. InvalidSpotInstanceRequestID.NotFound or InvalidInstanceRequestID.NotFound
-     * 
+     *
      * @param ec2
      * @param inst_tags
      * @param catchErrorCode
@@ -1146,7 +1145,7 @@ public class SlaveTemplate implements Describable<SlaveTemplate> {
 
         /**
          * Populates the Bid Type Drop down on the slave template config.
-         * 
+         *
          * @return
          */
         public ListBoxModel doFillBidTypeItems() {
